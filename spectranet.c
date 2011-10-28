@@ -3,33 +3,54 @@
 int
 check_internet_connection(void)
 {
-  /* This is wrong */
   char *externhost = "74.125.236.81";
   char *externport ="80";
+  char *request = "GET / HTTP/1.1\r\nHost: www.google.com\r\n\r\n";
   int sock;
   if( (sock = connect_to_server(externhost,externport)) < 0 ) {
-    return TRUE;
-  }
-  else {
-    close(sock);
     return FALSE;
   }
+  if( send_data(sock,request,strlen(request)) < 0 ) {
+	  close(sock);
+	  return FALSE;
+  }
+  char match_string[13],ch;
+  match_string[12] = '\0';
+  int i,count =0;
+  while( count < 500 ) {
+	  count++;
+	  i = 0;
+	  if( read(sock,&ch,1) < 0 ) {
+		  close(sock);
+		  return FALSE;
+	  }
+	  while( i < 11 ) {
+		  match_string[i] = match_string[i+1];
+		  i++;
+	  }
+	  match_string[i] = ch;
+	  if( ! strcmp(match_string,"203.92.63.70") ) {
+		  close(sock);
+		  return FALSE;
+	  }
+  }
+  return TRUE;
 }
 void
 connect_to_internet(char *username,char *password)
 {
   fprintf(stderr,"Connecting to Internet\n");
+  char request[500];
   /*
     1. Make a GET / to 1.254.254.254 as though to facebook
   */
   
-
-  char *req1 = "GET / HTTP/1.1\r\nHost: www.facebook.com\r\n\r\n";
+  strcpy(request,"GET / HTTP/1.1\r\nHost: www.facebook.com\r\n\r\n");
   int sock;
   if( (sock = connect_to_server("1.254.254.254","80")) < 0 ) {
     return;
   }
-  if( send_data(sock,req1,strlen(req1)) < 0 ) {
+  if( send_data(sock,request,strlen(request)) < 0 ) {
     return;
   }
 
@@ -74,12 +95,11 @@ connect_to_internet(char *username,char *password)
     3. Make a request to 203.92.63.70 with the path from the above URL
   */
 
-  char req2[500];
-  sprintf(req2,"GET %s HTTP/1.1\r\nHost: 203.92.63.70\r\n\r\n",path);
+  sprintf(request,"GET %s HTTP/1.1\r\nHost: 203.92.63.70\r\n\r\n",path);
   if( (sock = connect_to_server("203.92.63.70","80")) < 0 ) {
     return;
   }
-  if( send_data(sock,req2,strlen(req2)) < 0 ) {
+  if( send_data(sock,request,strlen(request)) < 0 ) {
     return;
   }
 
@@ -88,6 +108,7 @@ connect_to_internet(char *username,char *password)
     4. From the response extract the cookie for and use it for subsequent requests
   */
   char *resp,cookie[100],*start,*stop;
+  strcpy(cookie,"");
   while( 1 ) {
     resp = recv_data(sock);
 
@@ -101,27 +122,31 @@ connect_to_internet(char *username,char *password)
       while(start != stop)
         cookie[i++] = *(start++);
       cookie[i] = '\0';
-      //printf("Extracted cookie string : %s\n",cookie);
-    }
-
-    if(!strcmp(resp,"Content-Type: text/html;charset=ISO-8859-1\r\n") ) {
+	  free(resp);
+      resp = NULL;
       close(sock);
       break;
     }
-    free(resp);
-    resp = NULL;
+
+    if(!strcmp(resp,"Content-Type: text/html;charset=ISO-8859-1\r\n") ) {
+      free(resp);
+      resp = NULL;
+      close(sock);
+      break;
+    }
+    
   }
   /*
     5. Now connect to 203.92.63.70 and POST to /userportal/login.do?requesturi=http%3A%2F%2Fwww.facebook.com%2F
   */
-  strcpy(req2,"");
-  strcat(req2,"POST /userportal/login.do?requesturi=http%3A%2F%2Fwww.facebook.com%2F HTTP/1.1\r\nHost: 203.92.63.70\r\nCookie: ");
-  strcat(req2,cookie);
-  strcat(req2,"\r\n\r\n");
+  strcpy(request,"");
+  strcat(request,"POST /userportal/login.do?requesturi=http%3A%2F%2Fwww.facebook.com%2F HTTP/1.1\r\nHost: 203.92.63.70\r\nCookie: ");
+  strcat(request,cookie);
+  strcat(request,"\r\n\r\n");
   if( (sock = connect_to_server("203.92.63.70","80")) < 0 ) {
     return;
   }
-  if( send_data(sock,req2,strlen(req2)) < 0 ) {
+  if( send_data(sock,request,strlen(request)) < 0 ) {
     return;
   }
 
@@ -131,25 +156,24 @@ connect_to_internet(char *username,char *password)
     6. Now connect to 203.92.63.70 and POST to /userportal/newlogin.do?phone=0 the data "type=2&username=<username>&password=<password>
   */
   int postlen = 26 + strlen(username) + strlen(password);
-  char content_len[10];
+  char content_len[5];
   sprintf(content_len,"%d",postlen);
-  strcpy(req2,"");
-  strcat(req2,"POST /userportal/newlogin.do?phone=0 HTTP/1.1\r\nContent-Length: ");
-  strcat(req2,content_len);
-  strcat(req2,"\r\nHost: 203.92.63.70\r\nContent-Type: application/x-www-form-urlencoded\r\nReferer: http://203.92.63.70/userportal/login.do?requesturi=http%3A%2F%2Fwww.facebook.com%2F\r\nCookie: ");
-  strcat(req2,cookie);
-  strcat(req2,"\r\n\r\ntype=2&username=");
-  strcat(req2,username);
-  strcat(req2,"&password=");
-  strcat(req2,password);
+  strcpy(request,"");
+  strcat(request,"POST /userportal/newlogin.do?phone=0 HTTP/1.1\r\nContent-Length: ");
+  strcat(request,content_len);
+  strcat(request,"\r\nHost: 203.92.63.70\r\nContent-Type: application/x-www-form-urlencoded\r\nReferer: http://203.92.63.70/userportal/login.do?requesturi=http%3A%2F%2Fwww.facebook.com%2F\r\nCookie: ");
+  strcat(request,cookie);
+  strcat(request,"\r\n\r\ntype=2&username=");
+  strcat(request,username);
+  strcat(request,"&password=");
+  strcat(request,password);
   if( (sock = connect_to_server("203.92.63.70","80")) < 0 ) {
     return;
   }
-  if( send_data(sock,req2,strlen(req2)) < 0 ) {
+  if( send_data(sock,request,strlen(request)) < 0 ) {
     return;
   }
 
   close(sock);
-  exit(0);
 
 }
