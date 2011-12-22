@@ -29,9 +29,10 @@ check_internet_connection(void)
 		  i++;
 	  }
 	  match_string[i] = ch;
-	  if( ! strcmp(match_string,"203.92.63.70") ) {
-		  close(sock);
-		  return FALSE;
+	  //	  printf("%s\n",match_string);
+	  if( ! strcmp(match_string,"203.122.18.8") ) {
+	    close(sock);
+	    return FALSE;
 	  }
   }
   return TRUE;
